@@ -37,8 +37,10 @@ jobs:
       run: |
         echo "缓存未命中，开始安装项目依赖..."
         uv sync
-        echo "✅ 环境初始化完成"
-
+        echo "✅ 环境初始化完成"   
+    - name: 安装 requests 依赖
+      run: |
+       uv pip install requests
     - name: 获取 Playwright 版本
       id: playwright-version
       run: |
