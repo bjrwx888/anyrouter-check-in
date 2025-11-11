@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-AnyRouter.top 自动签到脚本（中文钉钉通知版本）
+AnyRouter.top / AgentRouter.org 自动签到脚本（中文钉钉通知版本）
+支持：
+✅ AnyRouter（原逻辑）
+✅ AgentRouter（兼容余额解析或提示“余额信息暂不可用”）
 """
 
 import asyncio
@@ -119,11 +122,13 @@ async def get_waf_cookies_with_playwright(account_name: str, login_url: str):
 
 # ============================= 用户信息与签到 =============================
 def get_user_info(client, headers, user_info_url: str):
-    """获取用户信息"""
+    """获取用户信息，兼容 AnyRouter 与 AgentRouter"""
     try:
         response = client.get(user_info_url, headers=headers, timeout=30)
         if response.status_code == 200:
             data = response.json()
+
+            # ✅ AnyRouter 格式
             if data.get('success'):
                 user_data = data.get('data', {})
                 quota = round(user_data.get('quota', 0) / 500000, 2)
@@ -134,6 +139,23 @@ def get_user_info(client, headers, user_info_url: str):
                     'used_quota': used_quota,
                     'display': f'💰 当前余额: ${quota}，已使用: ${used_quota}',
                 }
+
+            # ✅ AgentRouter 格式（部分接口返回 status/credit/usage）
+            elif data.get('status') in ('ok', 'success') or data.get('code') == 0:
+                quota = round(data.get('credit', 0) / 500000, 2)
+                used_quota = round(data.get('usage', 0) / 500000, 2)
+                msg = (
+                    f'💰 当前余额: ${quota}，已使用: ${used_quota}'
+                    if quota or used_quota
+                    else '💰 当前余额信息暂不可用'
+                )
+                return {
+                    'success': True,
+                    'quota': quota,
+                    'used_quota': used_quota,
+                    'display': msg,
+                }
+
         return {'success': False, 'error': f'获取用户信息失败: HTTP {response.status_code}'}
     except Exception as e:
         return {'success': False, 'error': f'获取用户信息异常: {str(e)[:50]}...'}
@@ -212,8 +234,12 @@ async def check_in_account(account: AccountConfig, idx: int, app_config: AppConf
         }
         info_url = f'{provider.domain}{provider.user_info_path}'
         info = get_user_info(client, headers, info_url)
+
         if info and info.get('success'):
             print(info['display'])
+        else:
+            print(f'[INFO] {name}: 未能获取余额信息')
+
         if provider.needs_manual_check_in():
             success = execute_check_in(client, name, provider, headers)
             return success, info
@@ -236,7 +262,7 @@ def send_dingtalk_message(accounts_info, success, fail, total):
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     msg_lines = [
-        "📢 AnyRouter 自动签到通知",
+        "📢 AnyRouter / AgentRouter 自动签到通知",
         f"🕒 执行时间：{now}",
         "",
         "💰【账户余额信息】"
